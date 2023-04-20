@@ -4,6 +4,9 @@
 
 #include <pinocchio/fwd.hpp>  // forward declarations must be included first.
 
+#include <pinocchio/algorithm/frames.hpp>
+#include <pinocchio/algorithm/kinematics.hpp>
+
 #include "legged_controllers/LeggedController.h"
 
 #include <ocs2_centroidal_model/AccessHelperFunctions.h>
@@ -112,6 +115,28 @@ void LeggedController::update(const ros::Time& time, const ros::Duration& period
   vector_t optimizedState, optimizedInput;
   size_t plannedMode = 0;  // The mode that is active at the time the policy is evaluated at.
   mpcMrtInterface_->evaluatePolicy(currentObservation_.time, currentObservation_.state, optimizedState, optimizedInput, plannedMode);
+
+  // TO DO
+  ROS_INFO_STREAM("-----STATE-------");
+  vector_t mpc_posDes = centroidal_model::getJointAngles(optimizedState, leggedInterface_->getCentroidalModelInfo());
+  vector_t mpc_velDes = centroidal_model::getJointVelocities(optimizedInput, leggedInterface_->getCentroidalModelInfo());
+  vector_t mpc_basePosDes = centroidal_model::getBasePose(optimizedState, leggedInterface_->getCentroidalModelInfo());
+  vector_t mpc_baseVelDes = optimizedInput.block(0,0,6,1);
+  std::vector<size_t> contactIds = leggedInterface_->getCentroidalModelInfo().endEffectorFrameIndices;
+  vector_t mpc_contactDes1 = centroidal_model::getContactForces(optimizedInput, contactIds[0], leggedInterface_->getCentroidalModelInfo());
+  vector_t mpc_contactDes2 = centroidal_model::getContactForces(optimizedInput, contactIds[1], leggedInterface_->getCentroidalModelInfo());
+  vector_t mpc_contactDes3 = centroidal_model::getContactForces(optimizedInput, contactIds[2], leggedInterface_->getCentroidalModelInfo());
+  vector_t mpc_contactDes4 = centroidal_model::getContactForces(optimizedInput, contactIds[3], leggedInterface_->getCentroidalModelInfo());
+  eeKinematicsPtr_->setPinocchioInterface(leggedInterface_->getPinocchioInterface());
+  const auto& mpc_model = leggedInterface_->getPinocchioInterface().getModel();
+  auto& mpc_data = leggedInterface_->getPinocchioInterface().getData();
+  pinocchio::forwardKinematics(mpc_model, mpc_data, centroidal_model::getGeneralizedCoordinates(optimizedState, leggedInterface_->getCentroidalModelInfo()));
+  pinocchio::updateFramePlacements(mpc_model, mpc_data);
+  std::vector<vector3_t> mpc_Pos = eeKinematicsPtr_->getPosition(optimizedState);
+  ROS_INFO_STREAM(std::to_string(mpc_Pos[0](0)));
+  ROS_INFO_STREAM(std::to_string(mpc_Pos[0](1)));
+  ROS_INFO_STREAM(std::to_string(mpc_Pos[0](2)));
+  // TO DO
 
   // Whole body control
   currentObservation_.input = optimizedInput;
