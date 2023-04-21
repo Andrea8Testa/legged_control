@@ -20,6 +20,11 @@
 #include "legged_controllers/SafetyChecker.h"
 #include "legged_controllers/visualization/LeggedSelfCollisionVisualization.h"
 
+#include "wolf_msgs/Base.h"
+#include "wolf_msgs/Force.h"
+#include "wolf_msgs/Cartesian.h"
+#include "wolf_msgs/Postural.h"
+
 namespace legged {
 using namespace ocs2;
 using namespace legged_robot;
@@ -70,8 +75,16 @@ class LeggedController : public controller_interface::MultiInterfaceController<H
   ros::Publisher observationPublisher_;
 
   // MPC Output
-  ros::Publisher mpcWrenchPublisher_;
-  ros::Publisher mpcFootPosePublisher_;
+  ros::Publisher mpcWrenchPublisher1_;
+  ros::Publisher mpcFootPublisher1_;
+  ros::Publisher mpcWrenchPublisher2_;
+  ros::Publisher mpcFootPublisher2_;
+  ros::Publisher mpcWrenchPublisher3_;
+  ros::Publisher mpcFootPublisher3_;
+  ros::Publisher mpcWrenchPublisher4_;
+  ros::Publisher mpcFootPublisher4_;
+  ros::Publisher mpcBasePublisher_;
+  ros::Publisher mpcPosturalPublisher_;
 
  private:
   std::thread mpcThread_;

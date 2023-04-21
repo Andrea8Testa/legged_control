@@ -19,6 +19,7 @@
 #include <ocs2_ros_interfaces/common/RosMsgConversions.h>
 #include <ocs2_ros_interfaces/synchronized_module/RosReferenceManager.h>
 #include <ocs2_sqp/SqpMpc.h>
+#include <ocs2_centroidal_model/ModelHelperFunctions.h>
 
 #include <angles/angles.h>
 #include <legged_estimation/FromTopiceEstimate.h>
@@ -76,6 +77,18 @@ bool LeggedController::init(hardware_interface::RobotHW* robot_hw, ros::NodeHand
   // Safety Checker
   safetyChecker_ = std::make_shared<SafetyChecker>(leggedInterface_->getCentroidalModelInfo());
 
+  // MPC publishers
+  mpcWrenchPublisher1_ = nh.advertise<wolf_msgs::Force>("mpc_wrench_lf", 1);
+  mpcFootPublisher1_ = nh.advertise<wolf_msgs::Cartesian>("mpc_foot_lf", 1);
+  mpcWrenchPublisher2_ = nh.advertise<wolf_msgs::Force>("mpc_wrench_lh", 1);
+  mpcFootPublisher2_ = nh.advertise<wolf_msgs::Cartesian>("mpc_foot_lh", 1);
+  mpcWrenchPublisher3_ = nh.advertise<wolf_msgs::Force>("mpc_wrench_rf", 1);
+  mpcFootPublisher3_ = nh.advertise<wolf_msgs::Cartesian>("mpc_foot_rf", 1);
+  mpcWrenchPublisher4_ = nh.advertise<wolf_msgs::Force>("mpc_wrench_rh", 1);
+  mpcFootPublisher4_ = nh.advertise<wolf_msgs::Cartesian>("mpc_foot_rh", 1);
+  mpcBasePublisher_ = nh.advertise<wolf_msgs::Cartesian>("mpc_base", 1);
+  mpcPosturalPublisher_ = nh.advertise<wolf_msgs::Postural>("mpc_postural", 1);
+
   return true;
 }
 
@@ -116,27 +129,108 @@ void LeggedController::update(const ros::Time& time, const ros::Duration& period
   size_t plannedMode = 0;  // The mode that is active at the time the policy is evaluated at.
   mpcMrtInterface_->evaluatePolicy(currentObservation_.time, currentObservation_.state, optimizedState, optimizedInput, plannedMode);
 
-  // TO DO
-  ROS_INFO_STREAM("-----STATE-------");
+  // Retrieve MPC ptimized output
   vector_t mpc_posDes = centroidal_model::getJointAngles(optimizedState, leggedInterface_->getCentroidalModelInfo());
   vector_t mpc_velDes = centroidal_model::getJointVelocities(optimizedInput, leggedInterface_->getCentroidalModelInfo());
-  vector_t mpc_basePosDes = centroidal_model::getBasePose(optimizedState, leggedInterface_->getCentroidalModelInfo());
-  vector_t mpc_baseVelDes = optimizedInput.block(0,0,6,1);
-  std::vector<size_t> contactIds = leggedInterface_->getCentroidalModelInfo().endEffectorFrameIndices;
-  vector_t mpc_contactDes1 = centroidal_model::getContactForces(optimizedInput, contactIds[0], leggedInterface_->getCentroidalModelInfo());
-  vector_t mpc_contactDes2 = centroidal_model::getContactForces(optimizedInput, contactIds[1], leggedInterface_->getCentroidalModelInfo());
-  vector_t mpc_contactDes3 = centroidal_model::getContactForces(optimizedInput, contactIds[2], leggedInterface_->getCentroidalModelInfo());
-  vector_t mpc_contactDes4 = centroidal_model::getContactForces(optimizedInput, contactIds[3], leggedInterface_->getCentroidalModelInfo());
+  vector_t mpc_basePosDes_eul = centroidal_model::getBasePose(optimizedState, leggedInterface_->getCentroidalModelInfo());
+
+  // Conversion from ZYX euler to quaternion
+  // Abbreviations for the various angular functions
+  double cr = cos(mpc_basePosDes_eul(5) * 0.5);
+  double sr = sin(mpc_basePosDes_eul(5) * 0.5);
+  double cp = cos(mpc_basePosDes_eul(4) * 0.5);
+  double sp = sin(mpc_basePosDes_eul(4) * 0.5);
+  double cy = cos(mpc_basePosDes_eul(3) * 0.5);
+  double sy = sin(mpc_basePosDes_eul(3) * 0.5);
+
+  Eigen::Quaterniond mpc_base_quat;
+  mpc_base_quat.w() = cr * cp * cy + sr * sp * sy;
+  mpc_base_quat.x() = sr * cp * cy - cr * sp * sy;
+  mpc_base_quat.y() = cr * sp * cy + sr * cp * sy;
+  mpc_base_quat.z() = cr * cp * sy - sr * sp * cy;
+
+//  std::vector<size_t> contactIds = leggedInterface_->getCentroidalModelInfo().endEffectorFrameIndices;
+  // Absolute ids not required. Ids are referred to leggedInterface_->getCentroidalModelInfo().numThreeDofContacts
+  vector_t mpc_contactDes1 = centroidal_model::getContactForces(optimizedInput, 0, leggedInterface_->getCentroidalModelInfo());
+  vector_t mpc_contactDes2 = centroidal_model::getContactForces(optimizedInput, 1, leggedInterface_->getCentroidalModelInfo());
+  vector_t mpc_contactDes3 = centroidal_model::getContactForces(optimizedInput, 2, leggedInterface_->getCentroidalModelInfo());
+  vector_t mpc_contactDes4 = centroidal_model::getContactForces(optimizedInput, 3, leggedInterface_->getCentroidalModelInfo());
   eeKinematicsPtr_->setPinocchioInterface(leggedInterface_->getPinocchioInterface());
   const auto& mpc_model = leggedInterface_->getPinocchioInterface().getModel();
   auto& mpc_data = leggedInterface_->getPinocchioInterface().getData();
   pinocchio::forwardKinematics(mpc_model, mpc_data, centroidal_model::getGeneralizedCoordinates(optimizedState, leggedInterface_->getCentroidalModelInfo()));
   pinocchio::updateFramePlacements(mpc_model, mpc_data);
-  std::vector<vector3_t> mpc_Pos = eeKinematicsPtr_->getPosition(optimizedState);
-  ROS_INFO_STREAM(std::to_string(mpc_Pos[0](0)));
-  ROS_INFO_STREAM(std::to_string(mpc_Pos[0](1)));
-  ROS_INFO_STREAM(std::to_string(mpc_Pos[0](2)));
-  // TO DO
+  std::vector<vector3_t> mpc_foot_pos = eeKinematicsPtr_->getPosition(optimizedState);
+  std::vector<vector3_t> mpc_foot_vel = eeKinematicsPtr_->getVelocity(optimizedState, optimizedInput);
+
+  CentroidalModelPinocchioMapping pinocchioMapping(leggedInterface_->getCentroidalModelInfo());
+  pinocchioMapping.setPinocchioInterface(leggedInterface_->getPinocchioInterface());
+  const auto qDesired = pinocchioMapping.getPinocchioJointPosition(optimizedState);
+  ocs2::updateCentroidalDynamics(leggedInterface_->getPinocchioInterface(), leggedInterface_->getCentroidalModelInfo(), qDesired);
+  const vector_t vDesired = pinocchioMapping.getPinocchioJointVelocity(optimizedState, optimizedInput);
+
+  // Pack messages
+  wolf_msgs::Force force_msg_1, force_msg_2, force_msg_3, force_msg_4;
+  force_msg_1.force.force.x = mpc_contactDes1(0);
+  force_msg_1.force.force.y = mpc_contactDes1(1);
+  force_msg_1.force.force.z = mpc_contactDes1(2);
+  force_msg_2.force.force.x = mpc_contactDes2(0);
+  force_msg_2.force.force.y = mpc_contactDes2(1);
+  force_msg_2.force.force.z = mpc_contactDes2(2);
+  force_msg_3.force.force.x = mpc_contactDes3(0);
+  force_msg_3.force.force.y = mpc_contactDes3(1);
+  force_msg_3.force.force.z = mpc_contactDes3(2);
+  force_msg_4.force.force.x = mpc_contactDes4(0);
+  force_msg_4.force.force.y = mpc_contactDes4(1);
+  force_msg_4.force.force.z = mpc_contactDes4(2);
+
+  wolf_msgs::Cartesian foot_msg_1, foot_msg_2, foot_msg_3, foot_msg_4;
+  foot_msg_1.pose.position.x = mpc_foot_pos[0](0);
+  foot_msg_1.pose.position.y = mpc_foot_pos[0](1);
+  foot_msg_1.pose.position.z = mpc_foot_pos[0](2);
+  foot_msg_1.twist.linear.x = mpc_foot_vel[0](1);
+  foot_msg_1.twist.linear.y = mpc_foot_vel[0](2);
+  foot_msg_1.twist.linear.z = mpc_foot_vel[0](3);
+  foot_msg_2.pose.position.x = mpc_foot_pos[1](0);
+  foot_msg_2.pose.position.y = mpc_foot_pos[1](1);
+  foot_msg_2.pose.position.z = mpc_foot_pos[1](2);
+  foot_msg_2.twist.linear.x = mpc_foot_vel[1](1);
+  foot_msg_2.twist.linear.y = mpc_foot_vel[1](2);
+  foot_msg_2.twist.linear.z = mpc_foot_vel[1](3);
+  foot_msg_3.pose.position.x = mpc_foot_pos[2](0);
+  foot_msg_3.pose.position.y = mpc_foot_pos[2](1);
+  foot_msg_3.pose.position.z = mpc_foot_pos[2](2);
+  foot_msg_3.twist.linear.x = mpc_foot_vel[2](1);
+  foot_msg_3.twist.linear.y = mpc_foot_vel[2](2);
+  foot_msg_3.twist.linear.z = mpc_foot_vel[2](3);
+  foot_msg_4.pose.position.x = mpc_foot_pos[3](0);
+  foot_msg_4.pose.position.y = mpc_foot_pos[3](1);
+  foot_msg_4.pose.position.z = mpc_foot_pos[3](2);
+  foot_msg_4.twist.linear.x = mpc_foot_vel[3](1);
+  foot_msg_4.twist.linear.y = mpc_foot_vel[3](2);
+  foot_msg_4.twist.linear.z = mpc_foot_vel[3](3);
+
+  wolf_msgs::Cartesian base_msg;
+  base_msg.pose.position.x = mpc_basePosDes_eul(0);
+  base_msg.pose.position.y = mpc_basePosDes_eul(1);
+  base_msg.pose.position.z = mpc_basePosDes_eul(2);
+  base_msg.pose.orientation.w = mpc_base_quat.w();
+  base_msg.pose.orientation.x = mpc_base_quat.x();
+  base_msg.pose.orientation.y = mpc_base_quat.y();
+  base_msg.pose.orientation.z = mpc_base_quat.z();
+
+  base_msg.twist.linear.x = vDesired(0);
+  base_msg.twist.linear.y = vDesired(1);
+  base_msg.twist.linear.z = vDesired(2);
+  base_msg.twist.angular.z = vDesired(3);
+  base_msg.twist.angular.y = vDesired(4);
+  base_msg.twist.angular.x = vDesired(5);
+
+  wolf_msgs::Postural postural_msg;
+  for (size_t i = 0; i < leggedInterface_->getCentroidalModelInfo().actuatedDofNum; ++i) {
+    postural_msg.positions.push_back(mpc_posDes(i));
+    postural_msg.velocities.push_back(mpc_velDes(i));
+  }
 
   // Whole body control
   currentObservation_.input = optimizedInput;
@@ -166,6 +260,18 @@ void LeggedController::update(const ros::Time& time, const ros::Duration& period
 
   // Publish the observation. Only needed for the command interface
   observationPublisher_.publish(ros_msg_conversions::createObservationMsg(currentObservation_));
+
+  // Publish the MPC output
+  mpcWrenchPublisher1_.publish(force_msg_1);
+  mpcFootPublisher1_.publish(foot_msg_1);
+  mpcWrenchPublisher2_.publish(force_msg_2);
+  mpcFootPublisher2_.publish(foot_msg_2);
+  mpcWrenchPublisher3_.publish(force_msg_3);
+  mpcFootPublisher3_.publish(foot_msg_3);
+  mpcWrenchPublisher4_.publish(force_msg_4);
+  mpcFootPublisher4_.publish(foot_msg_4);
+  mpcBasePublisher_.publish(base_msg);
+  mpcPosturalPublisher_.publish(postural_msg);
 }
 
 void LeggedController::updateStateEstimation(const ros::Time& time, const ros::Duration& period) {

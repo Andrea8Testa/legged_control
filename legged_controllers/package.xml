@@ -22,6 +22,8 @@
 
     <depend>angles</depend>
 
+    <depend>wolf_msgs</depend>
+
     <exec_depend>controller_manager</exec_depend>
 
     <export>
