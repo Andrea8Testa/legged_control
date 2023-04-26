@@ -80,6 +80,19 @@ target_link_libraries(legged_target_trajectories_publisher
         )
 target_compile_options(legged_target_trajectories_publisher PRIVATE ${OCS2_CXX_FLAGS})
 
+# MPC node
+add_executable(ocs2_mpc
+        src/Ocs2Mpc.cpp
+        )
+add_dependencies(ocs2_mpc
+        ${PROJECT_NAME}
+        ${catkin_EXPORTED_TARGETS}
+        )
+target_link_libraries(ocs2_mpc
+        ${PROJECT_NAME}
+        ${catkin_LIBRARIES}
+        )
+
 #########################
 ###   CLANG TOOLING   ###
 #########################
