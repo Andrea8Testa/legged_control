@@ -24,7 +24,13 @@ using namespace legged_robot;
 class MpcClass {
  public:
   MpcClass() = default;
-  ~MpcClass();
+  ~MpcClass(){
+    std::cerr << "########################################################################";
+    std::cerr << "\n### MPC Benchmarking";
+    std::cerr << "\n###   Maximum : " << mpcTimer_.getMaxIntervalInMilliseconds() << "[ms].";
+    std::cerr << "\n###   Average : " << mpcTimer_.getAverageInMilliseconds() << "[ms]." << std::endl;
+    std::cerr << "########################################################################";
+  }
   bool init(ros::NodeHandle& controller_nh);
   void update();
   void starting();

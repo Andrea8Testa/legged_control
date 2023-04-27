@@ -102,14 +102,6 @@ void MpcClass::update() {
   }
 }
 
-MpcClass::~LeggedController() {
-  std::cerr << "########################################################################";
-  std::cerr << "\n### MPC Benchmarking";
-  std::cerr << "\n###   Maximum : " << mpcTimer_.getMaxIntervalInMilliseconds() << "[ms].";
-  std::cerr << "\n###   Average : " << mpcTimer_.getAverageInMilliseconds() << "[ms]." << std::endl;
-  std::cerr << "########################################################################";
-}
-
 void MpcClass::setupLeggedInterface(const std::string& taskFile, const std::string& urdfFile, const std::string& referenceFile,
                                     bool verbose) {
   leggedInterface_ = std::make_shared<LeggedInterface>(taskFile, urdfFile, referenceFile);
@@ -141,8 +133,11 @@ void MpcClass::setupMrt() {
 void MpcClass::observationCallback(const ocs2_msgs::mpc_observationConstPtr& msg){
 
   currentObservation_.time = msg->time;
-  currentObservation_.state = msg->state;
-  currentObservation_.input = msg->input;
+  currentObservation_.state.setZero();
+  currentObservation_.input.setZero();
+  // Not working
+  currentObservation_.state.lazyAssign(msg->state.value);
+  currentObservation_.input.lazyAssign(msg->input.value);
   currentObservation_.mode = msg->mode;
 
   // Update the current state of the system
