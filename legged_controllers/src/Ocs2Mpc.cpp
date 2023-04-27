@@ -49,13 +49,13 @@ bool MpcClass::init(ros::NodeHandle& mpc_nh) {
                                                                       leggedInterface_->modelSettings().contactNames3DoF);
 
   // MPC publishers
-  mpcWrenchPublisher1_ = nh.advertise<wolf_msgs::Force>("mpc_wrench_lf", 1);
+  mpcWrenchPublisher1_ = nh.advertise<wolf_msgs::Wrench>("mpc_wrench_lf", 1);
   mpcFootPublisher1_ = nh.advertise<wolf_msgs::Cartesian>("mpc_foot_lf", 1);
-  mpcWrenchPublisher2_ = nh.advertise<wolf_msgs::Force>("mpc_wrench_lh", 1);
+  mpcWrenchPublisher2_ = nh.advertise<wolf_msgs::Wrench>("mpc_wrench_lh", 1);
   mpcFootPublisher2_ = nh.advertise<wolf_msgs::Cartesian>("mpc_foot_lh", 1);
-  mpcWrenchPublisher3_ = nh.advertise<wolf_msgs::Force>("mpc_wrench_rf", 1);
+  mpcWrenchPublisher3_ = nh.advertise<wolf_msgs::Wrench>("mpc_wrench_rf", 1);
   mpcFootPublisher3_ = nh.advertise<wolf_msgs::Cartesian>("mpc_foot_rf", 1);
-  mpcWrenchPublisher4_ = nh.advertise<wolf_msgs::Force>("mpc_wrench_rh", 1);
+  mpcWrenchPublisher4_ = nh.advertise<wolf_msgs::Wrench>("mpc_wrench_rh", 1);
   mpcFootPublisher4_ = nh.advertise<wolf_msgs::Cartesian>("mpc_foot_rh", 1);
   mpcBasePublisher_ = nh.advertise<wolf_msgs::Cartesian>("mpc_base", 1);
   mpcPosturalPublisher_ = nh.advertise<wolf_msgs::Postural>("mpc_postural", 1);
@@ -135,9 +135,12 @@ void MpcClass::observationCallback(const ocs2_msgs::mpc_observationConstPtr& msg
   currentObservation_.time = msg->time;
   currentObservation_.state.setZero();
   currentObservation_.input.setZero();
-  // Not working
-  currentObservation_.state.lazyAssign(msg->state.value);
-  currentObservation_.input.lazyAssign(msg->input.value);
+
+  for (size_t i = 0; i < leggedInterface_->getCentroidalModelInfo().stateDim; ++i)
+    currentObservation_.state(i) = msg->state.value[i];
+  for (size_t i = 0; i < leggedInterface_->getCentroidalModelInfo().inputDim; ++i)
+    currentObservation_.input(i) = msg->input.value[i];
+
   currentObservation_.mode = msg->mode;
 
   // Update the current state of the system
@@ -192,7 +195,7 @@ void MpcClass::observationCallback(const ocs2_msgs::mpc_observationConstPtr& msg
   const vector_t vDesired = pinocchioMapping.getPinocchioJointVelocity(optimizedState, optimizedInput);
 
   // Pack messages
-  wolf_msgs::Force force_msg_1, force_msg_2, force_msg_3, force_msg_4;
+  wolf_msgs::Wrench force_msg_1, force_msg_2, force_msg_3, force_msg_4;
   force_msg_1.force.force.x = mpc_contactDes1(0);
   force_msg_1.force.force.y = mpc_contactDes1(1);
   force_msg_1.force.force.z = mpc_contactDes1(2);

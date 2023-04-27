@@ -12,8 +12,7 @@
 #include <legged_interface/LeggedInterface.h>
 
 #include "ocs2_msgs/mpc_observation.h"
-#include "wolf_msgs/Base.h"
-#include "wolf_msgs/Force.h"
+#include "wolf_msgs/Wrench.h"
 #include "wolf_msgs/Cartesian.h"
 #include "wolf_msgs/Postural.h"
 namespace legged {
